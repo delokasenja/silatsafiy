@@ -2317,12 +2317,62 @@
             pengurusan: 'Pengurusan Waris'
         };
 
-        const DEFAULT_BELT_OPTIONS = ['Putih', 'Kuning', 'Jingga', 'Hijau', 'Biru', 'Coklat', 'Hitam'];
+        const DEFAULT_BELT_OPTIONS = [
+            { nama: 'Putih', warna: '#ffffff' },
+            { nama: 'Kuning', warna: '#facc15' },
+            { nama: 'Jingga', warna: '#f97316' },
+            { nama: 'Hijau', warna: '#10b981' },
+            { nama: 'Biru', warna: '#3b82f6' },
+            { nama: 'Coklat', warna: '#78350f' },
+            { nama: 'Hitam', warna: '#000000' }
+        ];
+
+        function defaultBeltColor(name) {
+            const colors = {
+                PUTIH: '#ffffff',
+                KUNING: '#facc15',
+                JINGGA: '#f97316',
+                HIJAU: '#10b981',
+                BIRU: '#3b82f6',
+                COKLAT: '#78350f',
+                HITAM: '#000000',
+                PERMULAAN: '#ffd700',
+                'PELAJAR BARU': '#ffd700'
+            };
+            return colors[String(name || '').trim().toUpperCase()] || '#737373';
+        }
+
+        function normalizeBeltOption(item) {
+            if (typeof item === 'string') return { nama: item.trim(), warna: defaultBeltColor(item) };
+            return {
+                nama: String(item?.nama || item?.name || item?.label || '').trim(),
+                warna: String(item?.warna || item?.color || defaultBeltColor(item?.nama || item?.name || item?.label)).trim()
+            };
+        }
+
+        function getBeltOptionItems() {
+            const s = allSettings.find(x => x.setting_key === 'belt_options');
+            const raw = Array.isArray(s?.options) ? s.options : DEFAULT_BELT_OPTIONS;
+            return raw.map(normalizeBeltOption).filter(item => item.nama);
+        }
 
         function getBeltOptions() {
-            const s = allSettings.find(x => x.setting_key === 'belt_options');
-            const opts = Array.isArray(s?.options) ? s.options : DEFAULT_BELT_OPTIONS;
-            return opts.map(x => String(x || '').trim()).filter(Boolean);
+            return getBeltOptionItems().map(item => item.nama);
+        }
+
+        function getBeltColorByName(name) {
+            const item = getBeltOptionItems().find(opt => opt.nama.toLowerCase() === String(name || '').trim().toLowerCase());
+            return item?.warna || defaultBeltColor(name);
+        }
+
+        function beltBadgeHtml(name) {
+            if (!name) return '';
+            const color = getBeltColorByName(name);
+            const key = String(name).trim().toUpperCase();
+            const icon = (key === 'PERMULAAN' || key === 'PELAJAR BARU')
+                ? `<span class="px-1.5 py-0.5 rounded bg-neutral-950 text-[7px] font-black text-gold-400">NEW</span>`
+                : `<span class="w-3 h-3 rounded-full border border-neutral-500 shrink-0" style="background:${escapeHtml(color)}"></span>`;
+            return `<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[9px] text-neutral-200 font-bold">${icon}<span>${escapeHtml(name)}</span></span>`;
         }
 
         function buildBeltOptionsHtml(selected = '', placeholder = 'Tahap / Bengkung', limit = null) {
@@ -2351,6 +2401,11 @@
             window._autoCapsReady = true;
             document.addEventListener('input', e => {
                 const el = e.target;
+                if (el?.classList?.contains('belt-color-input')) {
+                    refreshBeltOptionIcon(el);
+                    return;
+                }
+                if (el?.classList?.contains('child-tahap') || el?.classList?.contains('edit-child-tahap')) updateBeltSelectPreview(el);
                 if (!shouldAutoCapsElement(el)) return;
                 const start = el.selectionStart;
                 const end = el.selectionEnd;
@@ -2364,8 +2419,16 @@
         }
 
         function refreshBeltOptionIcon(input) {
-            const wrap = input?.closest('.belt-option-row')?.querySelector('.belt-option-icon-wrap');
-            if (wrap) wrap.innerHTML = beltOptionIconHtml(input.value);
+            const row = input?.closest('.belt-option-row');
+            const wrap = row?.querySelector('.belt-option-icon-wrap');
+            const name = row?.querySelector('.belt-option-input')?.value || '';
+            const color = row?.querySelector('.belt-color-input')?.value || defaultBeltColor(name);
+            if (wrap) wrap.innerHTML = beltOptionIconHtml(name, color);
+        }
+
+        function updateBeltSelectPreview(select) {
+            const preview = select?.parentElement?.querySelector('.belt-select-preview');
+            if (preview) preview.innerHTML = select.value ? beltBadgeHtml(select.value) : '';
         }
 
         const DEFAULT_ADMIN_MENU_ORDER = ['announcements','members','senarai-ahli','admin-records','system-users-tab','gallery-tab','admin-profile-tab','external-links-tab','settings-tab'];
@@ -3707,9 +3770,12 @@
                             <option value="lelaki">♂ Lelaki</option>
                             <option value="perempuan">♀ Perempuan</option>
                         </select>
-                        <select class="child-tahap px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-neutral-200 focus:outline-none focus:border-gold-500 text-xs w-full">
-                            ${buildBeltOptionsHtml('', 'Tahap / Bengkung', 2)}
-                        </select>
+                        <div class="space-y-1">
+                            <select class="child-tahap px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-neutral-200 focus:outline-none focus:border-gold-500 text-xs w-full" onchange="updateBeltSelectPreview(this)">
+                                ${buildBeltOptionsHtml('', 'Tahap / Bengkung', 2)}
+                            </select>
+                            <div class="belt-select-preview min-h-[1.4rem]"></div>
+                        </div>
                         <div class="col-span-2">
                             <input type="text" class="child-sekolah w-full px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-gold-500 text-xs" placeholder="Sekolah (Pilihan)">
                         </div>
@@ -4079,7 +4145,7 @@
                             <div class="col-span-2"><span class="text-neutral-600">No. Ahli Rasmi</span><br><span class="text-neutral-200 font-semibold">${escapeHtml(c.noAhliRasmi || '-')}</span></div>
                             <div><span class="text-neutral-600">Umur</span><br><span class="text-neutral-200 font-semibold">${c.age} Tahun</span></div>
                             ${c.jantina ? `<div><span class="text-neutral-600">Jantina</span><br><span class="text-neutral-200 font-semibold">${c.jantina === 'lelaki' ? '♂ Lelaki' : '♀ Perempuan'}</span></div>` : ''}
-                            ${c.tahap   ? `<div><span class="text-neutral-600">Tahap</span><br><span class="text-neutral-200 font-semibold">🥋 ${c.tahap}</span></div>` : ''}
+                            ${c.tahap   ? `<div><span class="text-neutral-600">Tahap</span><br>${beltBadgeHtml(c.tahap)}</div>` : ''}
                             ${c.sekolah ? `<div class="col-span-2"><span class="text-neutral-600">Sekolah</span><br><span class="text-neutral-200 font-semibold">🏫 ${c.sekolah}</span></div>` : ''}
                         </div>
                         <div class="bg-neutral-900/50 border border-neutral-800 rounded-xl p-3 space-y-2">
@@ -4962,9 +5028,9 @@
                         </button>
                     `;
                     const tags = [
-                        (colVis.show_jantina && c.jantina) ? (c.jantina === 'lelaki' ? '♂ Lelaki' : '♀ Perempuan') : null,
-                        (colVis.show_tahap   && c.tahap)   ? `🥋 ${c.tahap}` : null,
-                        (colVis.show_sekolah && c.sekolah) ? `🏫 ${c.sekolah}` : null
+                        (colVis.show_jantina && c.jantina) ? `<span class="px-1.5 py-0.5 bg-neutral-900 rounded text-[8px] text-neutral-400 border border-neutral-800">${c.jantina === 'lelaki' ? 'Lelaki' : 'Perempuan'}</span>` : null,
+                        (colVis.show_tahap   && c.tahap)   ? beltBadgeHtml(c.tahap) : null,
+                        (colVis.show_sekolah && c.sekolah) ? `<span class="px-1.5 py-0.5 bg-neutral-900 rounded text-[8px] text-neutral-400 border border-neutral-800">${escapeHtml(c.sekolah)}</span>` : null
                     ].filter(Boolean);
 
                     const icRow    = colVis.show_ic   ? `<span>IC: ${maskedIC || '-'}</span>` : '';
@@ -4985,7 +5051,7 @@
                             </div>
                             ${c.gambarKadAhli ? `<div class="flex items-center gap-2 text-[9px] text-neutral-500">${childOfficialCardHtml(c)} <span>Kad ahli rasmi disimpan</span></div>` : ''}
                             ${infoRow}
-                            ${tags.length > 0 ? `<div class="flex flex-wrap gap-1">${tags.map(t => `<span class="px-1.5 py-0.5 bg-neutral-900 rounded text-[8px] text-neutral-400 border border-neutral-800">${t}</span>`).join('')}</div>` : ''}
+                            ${tags.length > 0 ? `<div class="flex flex-wrap gap-1">${tags.join('')}</div>` : ''}
                         </div>
                     `;
                 }).join('');
@@ -7386,12 +7452,13 @@
         function renderBeltOptionsSettings() {
             const list = document.getElementById('beltOptionsList');
             if (!list) return;
-            const opts = getBeltOptions();
-            list.innerHTML = opts.map((opt, idx) => `
+            const opts = getBeltOptionItems();
+            list.innerHTML = opts.map((item, idx) => `
                 <div class="belt-option-row flex items-center gap-2" data-index="${idx}">
                     <div class="flex-1 min-w-0 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 focus-within:border-gold-500">
-                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(opt)}</span>
-                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(opt)}">
+                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(item.nama, item.warna)}</span>
+                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(item.nama)}">
+                        <input type="color" class="belt-color-input w-8 h-8 rounded-lg bg-transparent border border-neutral-700 cursor-pointer shrink-0" value="${escapeHtml(item.warna)}" title="Pilih warna icon">
                     </div>
                     <button type="button" onclick="moveBeltOption(${idx}, -1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400" title="Naik"><i data-lucide="chevron-up" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="moveBeltOption(${idx}, 1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400" title="Turun"><i data-lucide="chevron-down" class="w-4 h-4 mx-auto"></i></button>
@@ -7401,38 +7468,33 @@
             lucide.createIcons();
         }
 
-        function beltOptionIconHtml(option) {
+        function beltOptionIconHtml(option, color = null) {
             const key = String(option || '').trim().toUpperCase();
             if (key === 'PERMULAAN' || key === 'PELAJAR BARU') {
-                return '<span class="shrink-0 px-2 py-0.5 rounded-md bg-gold-500 text-neutral-950 text-[8px] font-black tracking-wider">NEW</span>';
+                return `<span class="shrink-0 px-2 py-0.5 rounded-md text-neutral-950 text-[8px] font-black tracking-wider" style="background:${escapeHtml(color || '#ffd700')}">NEW</span>`;
             }
-            const colors = {
-                PUTIH: 'bg-white border-neutral-300',
-                KUNING: 'bg-yellow-400 border-yellow-300',
-                JINGGA: 'bg-orange-500 border-orange-400',
-                HIJAU: 'bg-emerald-500 border-emerald-400',
-                BIRU: 'bg-blue-500 border-blue-400',
-                COKLAT: 'bg-amber-900 border-amber-700',
-                HITAM: 'bg-black border-neutral-500'
-            };
-            const cls = colors[key] || 'bg-neutral-700 border-neutral-500';
-            return `<span class="shrink-0 w-4 h-4 rounded-full border ${cls} shadow-sm"></span>`;
+            return `<span class="shrink-0 w-4 h-4 rounded-full border border-neutral-500 shadow-sm" style="background:${escapeHtml(color || defaultBeltColor(option))}"></span>`;
         }
 
         function getBeltOptionsFromSettingsInputs() {
-            return [...document.querySelectorAll('#beltOptionsList .belt-option-input')]
-                .map(input => input.value.trim())
-                .filter(Boolean);
+            return [...document.querySelectorAll('#beltOptionsList .belt-option-row')]
+                .map(row => ({
+                    nama: row.querySelector('.belt-option-input')?.value.trim() || '',
+                    warna: row.querySelector('.belt-color-input')?.value || defaultBeltColor(row.querySelector('.belt-option-input')?.value)
+                }))
+                .filter(item => item.nama);
         }
 
         function setBeltOptionsInputs(options) {
             const list = document.getElementById('beltOptionsList');
             if (!list) return;
-            list.innerHTML = options.map((opt, idx) => `
+            const normalized = options.map(normalizeBeltOption).filter(item => item.nama);
+            list.innerHTML = normalized.map((item, idx) => `
                 <div class="belt-option-row flex items-center gap-2" data-index="${idx}">
                     <div class="flex-1 min-w-0 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 focus-within:border-gold-500">
-                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(opt)}</span>
-                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(opt)}">
+                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(item.nama, item.warna)}</span>
+                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(item.nama)}">
+                        <input type="color" class="belt-color-input w-8 h-8 rounded-lg bg-transparent border border-neutral-700 cursor-pointer shrink-0" value="${escapeHtml(item.warna)}" title="Pilih warna icon">
                     </div>
                     <button type="button" onclick="moveBeltOption(${idx}, -1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400"><i data-lucide="chevron-up" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="moveBeltOption(${idx}, 1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400"><i data-lucide="chevron-down" class="w-4 h-4 mx-auto"></i></button>
@@ -7447,7 +7509,7 @@
             const value = input?.value.trim();
             if (!value) return;
             const opts = getBeltOptionsFromSettingsInputs();
-            if (!opts.some(x => x.toLowerCase() === value.toLowerCase())) opts.push(value);
+            if (!opts.some(x => x.nama.toLowerCase() === value.toLowerCase())) opts.push({ nama: value, warna: defaultBeltColor(value) });
             setBeltOptionsInputs(opts);
             if (input) input.value = '';
         }
@@ -7468,7 +7530,13 @@
 
         async function saveBeltOptionsSettings() {
             if (!isAdminUser()) return;
-            const options = [...new Set(getBeltOptionsFromSettingsInputs().map(x => x.trim()).filter(Boolean))];
+            const seen = new Set();
+            const options = getBeltOptionsFromSettingsInputs().filter(item => {
+                const key = item.nama.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
             if (!options.length) {
                 showToast('Sila masukkan sekurang-kurangnya satu pilihan tali pinggang.', 'error');
                 return;
@@ -7477,9 +7545,16 @@
             const payload = { type: 'settings', doc_type: 'settings', setting_key: 'belt_options', options, updatedAt: new Date().toISOString() };
             const res = existing ? await dataSdk.update({ ...existing, ...payload }) : await dataSdk.create(payload);
             if (res.isOk) {
+                if (existing) {
+                    Object.assign(existing, payload);
+                } else {
+                    allSettings.push({ ...payload, __backendId: res.id || 'belt_options' });
+                }
                 showToast('Pilihan tali pinggang berjaya disimpan.', 'success');
                 await createAdminLog('Simpan Pilihan Tali Pinggang', 'Senarai pilihan tahap/bengkung dikemas kini.', {});
                 renderBeltOptionsSettings();
+                renderProfileTab();
+                renderMembers();
             } else {
                 showToast('Gagal simpan pilihan tali pinggang.', 'error');
             }
@@ -7745,7 +7820,10 @@
                         <input type="number" class="edit-child-age px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500" placeholder="Umur (Thn)" value="${c?.age || ''}" min="1" max="99">
                         <input type="text" class="edit-child-ic px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500" placeholder="No. IC / MyKid" value="${c?.ic || ''}">
                         <select class="edit-child-jantina px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500">${jantinaOpts}</select>
-                        <select class="edit-child-tahap px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500">${tahapOpts}</select>
+                        <div class="space-y-1">
+                            <select class="edit-child-tahap px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500 w-full" onchange="updateBeltSelectPreview(this)">${tahapOpts}</select>
+                            <div class="belt-select-preview min-h-[1.4rem]">${c?.tahap ? beltBadgeHtml(c.tahap) : ''}</div>
+                        </div>
                         <div class="col-span-2">
                             <input type="text" class="edit-child-sekolah w-full px-2.5 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-neutral-100 focus:outline-none focus:border-gold-500" placeholder="Sekolah (Pilihan)" value="${c?.sekolah || ''}">
                         </div>
