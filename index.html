@@ -2359,7 +2359,13 @@
                     el.value = upper;
                     try { el.setSelectionRange(start, end); } catch(err) {}
                 }
+                if (el.classList.contains('belt-option-input')) refreshBeltOptionIcon(el);
             });
+        }
+
+        function refreshBeltOptionIcon(input) {
+            const wrap = input?.closest('.belt-option-row')?.querySelector('.belt-option-icon-wrap');
+            if (wrap) wrap.innerHTML = beltOptionIconHtml(input.value);
         }
 
         const DEFAULT_ADMIN_MENU_ORDER = ['announcements','members','senarai-ahli','admin-records','system-users-tab','gallery-tab','admin-profile-tab','external-links-tab','settings-tab'];
@@ -7383,13 +7389,34 @@
             const opts = getBeltOptions();
             list.innerHTML = opts.map((opt, idx) => `
                 <div class="belt-option-row flex items-center gap-2" data-index="${idx}">
-                    <input type="text" class="belt-option-input auto-caps flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:border-gold-500" value="${escapeHtml(opt)}">
+                    <div class="flex-1 min-w-0 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 focus-within:border-gold-500">
+                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(opt)}</span>
+                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(opt)}">
+                    </div>
                     <button type="button" onclick="moveBeltOption(${idx}, -1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400" title="Naik"><i data-lucide="chevron-up" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="moveBeltOption(${idx}, 1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400" title="Turun"><i data-lucide="chevron-down" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="removeBeltOption(${idx})" class="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 hover:bg-red-500/20" title="Padam"><i data-lucide="trash-2" class="w-4 h-4 mx-auto"></i></button>
                 </div>
             `).join('');
             lucide.createIcons();
+        }
+
+        function beltOptionIconHtml(option) {
+            const key = String(option || '').trim().toUpperCase();
+            if (key === 'PERMULAAN' || key === 'PELAJAR BARU') {
+                return '<span class="shrink-0 px-2 py-0.5 rounded-md bg-gold-500 text-neutral-950 text-[8px] font-black tracking-wider">NEW</span>';
+            }
+            const colors = {
+                PUTIH: 'bg-white border-neutral-300',
+                KUNING: 'bg-yellow-400 border-yellow-300',
+                JINGGA: 'bg-orange-500 border-orange-400',
+                HIJAU: 'bg-emerald-500 border-emerald-400',
+                BIRU: 'bg-blue-500 border-blue-400',
+                COKLAT: 'bg-amber-900 border-amber-700',
+                HITAM: 'bg-black border-neutral-500'
+            };
+            const cls = colors[key] || 'bg-neutral-700 border-neutral-500';
+            return `<span class="shrink-0 w-4 h-4 rounded-full border ${cls} shadow-sm"></span>`;
         }
 
         function getBeltOptionsFromSettingsInputs() {
@@ -7403,7 +7430,10 @@
             if (!list) return;
             list.innerHTML = options.map((opt, idx) => `
                 <div class="belt-option-row flex items-center gap-2" data-index="${idx}">
-                    <input type="text" class="belt-option-input auto-caps flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:border-gold-500" value="${escapeHtml(opt)}">
+                    <div class="flex-1 min-w-0 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 focus-within:border-gold-500">
+                        <span class="belt-option-icon-wrap shrink-0">${beltOptionIconHtml(opt)}</span>
+                        <input type="text" class="belt-option-input auto-caps flex-1 min-w-0 bg-transparent text-xs text-neutral-100 focus:outline-none" value="${escapeHtml(opt)}">
+                    </div>
                     <button type="button" onclick="moveBeltOption(${idx}, -1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400"><i data-lucide="chevron-up" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="moveBeltOption(${idx}, 1)" class="w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-gold-400"><i data-lucide="chevron-down" class="w-4 h-4 mx-auto"></i></button>
                     <button type="button" onclick="removeBeltOption(${idx})" class="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 hover:bg-red-500/20"><i data-lucide="trash-2" class="w-4 h-4 mx-auto"></i></button>
