@@ -1361,6 +1361,20 @@
               </button>
             </div>
 
+            <div class="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5 space-y-4">
+              <div>
+                <h3 class="text-[10px] font-black text-gold-500 uppercase tracking-widest flex items-center gap-2"><i data-lucide="calendar-days" class="w-4 h-4"></i><span>PELAN BAYARAN BULANAN</span></h3>
+                <p class="text-[9px] text-neutral-500 mt-1">Tetapkan amaun yuran mengikut bulan sahaja. Tidak termasuk Kutipan Ihsan.</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-[9px] font-bold text-neutral-500 uppercase shrink-0">Tahun</label>
+                <select id="monthlyFeePlanYear" onchange="renderMonthlyFeePlanSettings()" class="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:border-gold-500"></select>
+              </div>
+              <div id="monthlyFeePlanList" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+              <p class="text-[9px] text-neutral-500 leading-relaxed">Nota: Kutipan Ihsan kekal ikut kadar di Kadar Yuran (SKU) dan akan dikira berasingan semasa bayaran dibuat.</p>
+              <button onclick="saveMonthlyFeePlanSettings()" class="btn-clear-mobile w-full py-2.5 bg-neutral-950 hover:bg-neutral-900 text-gold-400 border border-gold-500/20 font-black rounded-xl text-xs">Simpan Pelan Bayaran</button>
+            </div>
+
             <!-- Bank Info -->
             <div class="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5 space-y-3">
               <h3 class="text-[10px] font-black text-gold-500 uppercase tracking-widest flex items-center gap-2"><span>🏦</span><span>MAKLUMAT BANK</span></h3>
@@ -1831,6 +1845,46 @@
         function calculateFee(age) {
             const s = allSettings.find(x => x.setting_key === 'payment_info');
             return age < 6 ? (s?.monthly_under6 ?? 10) : (s?.monthly_over6 ?? 20);
+        }
+
+        function parsePaymentMonth(month) {
+            const value = String(month || '').trim();
+            const match = value.match(/^(\d{4})-(\d{1,2})$/);
+            if (match) return { year: Number(match[1]), monthIndex: Number(match[2]) - 1, month: `${match[1]}-${String(match[2]).padStart(2, '0')}` };
+            const now = new Date();
+            return { year: now.getFullYear(), monthIndex: now.getMonth(), month: now.toISOString().slice(0, 7) };
+        }
+
+        function getMonthlyFeePlanSetting() {
+            return allSettings.find(x => x.setting_key === 'monthly_fee_plan') || {};
+        }
+
+        function getMonthlyFeePlanForYear(year) {
+            const setting = getMonthlyFeePlanSetting();
+            if (setting.plans && setting.plans[String(year)]) return setting.plans[String(year)] || {};
+            if (String(setting.year || '') === String(year) && setting.months) return setting.months || {};
+            return {};
+        }
+
+        function getMonthlyFeeForMonth(month, age) {
+            const { year, monthIndex } = parsePaymentMonth(month);
+            const plan = getMonthlyFeePlanForYear(year);
+            const raw = plan[String(monthIndex)];
+            if (raw !== undefined && raw !== null && raw !== '') {
+                const amount = Number(raw);
+                if (Number.isFinite(amount) && amount >= 0) return amount;
+            }
+            return calculateFee(Number(age || 0));
+        }
+
+        function getPaymentAmountForType(month, age, payType = 'monthly_ihsan') {
+            const info = getPaymentInfoSettings();
+            const monthlyFee = getMonthlyFeeForMonth(month, age);
+            const ihsanFee = info.ihsan_fee ?? 5;
+            if (payType === 'monthly') return monthlyFee;
+            if (payType === 'ihsan') return ihsanFee;
+            if (payType === 'annual') return info.annual_fee;
+            return monthlyFee + ihsanFee;
         }
 
         function escStr(s) {
@@ -3993,9 +4047,10 @@
             }
 
             let totalMonthly = 0;
+            const currentMonth = new Date().toISOString().slice(0, 7);
             groups.forEach(grp => {
                 const ageVal = parseInt(grp.querySelector('.child-age')?.value || '0');
-                const fee = (!isNaN(ageVal) && ageVal > 0) ? calculateFee(ageVal) : info.monthly_over6;
+                const fee = (!isNaN(ageVal) && ageVal > 0) ? getMonthlyFeeForMonth(currentMonth, ageVal) : getMonthlyFeeForMonth(currentMonth, 7);
                 totalMonthly += fee + info.ihsan_fee;
             });
 
@@ -4380,7 +4435,7 @@
                 targetChildren.forEach(c => {
                     const childId = myMember.__backendId + '_' + c.name;
                     const pay = myPayments.find(p => p.child_id === childId && p.month === monthStr);
-                    const fee = calculateFee(c.age);
+                    const fee = getMonthlyFeeForMonth(monthStr, c.age);
                     totalAmount += fee;
                     if (pay) {
                         if (!overallStatus) overallStatus = pay.payment_status;
@@ -4442,7 +4497,7 @@
             }).join('');
 
             // Store context so calProceedPayment() can use it without JSON in onclick attr
-            _calContext = { memberId: myMember.__backendId, children: myChildren.map(c => ({ name: c.name, age: c.age })) };
+            _calContext = { memberId: myMember.__backendId, children: targetChildren.map(c => ({ name: c.name, age: c.age })) };
 
             return `
             <div class="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5 space-y-4">
@@ -4504,8 +4559,10 @@
             bar.classList.remove('hidden');
             bar.classList.add('flex');
             lbl.textContent = `${_calSelected.size} bulan dipilih`;
-            // Estimate total (we can't easily compute per-child here, so show placeholder)
-            amt.textContent = `Teruskan untuk lihat jumlah bayaran`;
+            const total = [..._calSelected].reduce((sum, month) => {
+                return sum + (_calContext.children || []).reduce((childSum, child) => childSum + getPaymentAmountForType(month, child.age, 'monthly_ihsan'), 0);
+            }, 0);
+            amt.textContent = `Anggaran jumlah: RM ${total}`;
         }
 
         function calClearSelection() {
@@ -4534,8 +4591,10 @@
             const memberId = _calContext.memberId;
             const myMember = allMembers.find(m => m.__backendId === memberId);
             if (!myMember) return;
-            let myChildren = [];
-            try { myChildren = JSON.parse(myMember.children || '[]'); } catch(e) {}
+            let myChildren = _calContext.children || [];
+            if (!myChildren.length) {
+                try { myChildren = JSON.parse(myMember.children || '[]'); } catch(e) {}
+            }
             openUserPayModal(memberId, myMember, myChildren, months);
         }
 
@@ -4554,7 +4613,7 @@
                 const [y, mo] = m.split('-').map(Number);
                 let monthTotal = 0;
                 myChildren.forEach(c => {
-                    monthTotal += calculateFee(c.age) + (info.ihsan_fee ?? 5);
+                    monthTotal += getPaymentAmountForType(m, c.age, 'monthly_ihsan');
                 });
                 totalAmt += monthTotal;
                 return `<div class="flex items-center justify-between text-xs py-1 border-b border-neutral-800/50">
@@ -4630,6 +4689,7 @@
             // Store context for submit
             content.dataset.memberId  = memberId;
             content.dataset.months    = JSON.stringify(months);
+            content.dataset.children  = JSON.stringify(myChildren.map(c => ({ name: c.name, age: c.age })));
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -4659,7 +4719,10 @@
             const myMember  = allMembers.find(m => m.__backendId === memberId);
             if (!myMember || !months.length) return;
             let myChildren = [];
-            try { myChildren = JSON.parse(myMember.children || '[]'); } catch(e) {}
+            try { myChildren = JSON.parse(content?.dataset.children || '[]'); } catch(e) {}
+            if (!myChildren.length) {
+                try { myChildren = JSON.parse(myMember.children || '[]'); } catch(e) {}
+            }
             const payDate  = document.getElementById('userPayDate')?.value || new Date().toISOString().slice(0,10);
             const notes    = document.getElementById('userPayNotes')?.value?.trim() || '';
             const btn      = document.getElementById('submitUserPayBtn');
@@ -4670,6 +4733,7 @@
                 for (const c of myChildren) {
                     const childId  = myMember.__backendId + '_' + c.name;
                     const existing = allPayments.find(p => p.child_id === childId && p.month === month);
+                    const amountDue = getPaymentAmountForType(month, c.age, 'monthly_ihsan');
                     const payData  = {
                         child_id      : childId,
                         month,
@@ -4677,6 +4741,9 @@
                         payment_type  : 'monthly_ihsan',
                         payment_status: 'pending',
                         payment_date  : payDate,
+                        jumlahBayaran : amountDue,
+                        jumlahDibayar : amountDue,
+                        amount        : amountDue,
                         notes,
                         receipt_image : _userPayReceipt || null,
                         type          : 'payment',
@@ -5104,8 +5171,10 @@
                 const childLines = children.map(c => {
                     const pay = payments.find(p => paymentMatchesChild(p, member, c) && Number((p.month || '').split('-')[0] || p.tahun || year) === year && Number((p.month || '').split('-')[1] || (Number(p.bulanIndex) + 1) || p.bulan || 0) === idx + 1);
                     const status = pay ? normalizePaymentStatus(pay) : 'Belum Bayar';
+                    const amount = pay ? (pay.jumlahBayaran ?? pay.amount ?? getMonthlyFeeForMonth(`${year}-${String(idx + 1).padStart(2,'0')}`, c.age)) : getMonthlyFeeForMonth(`${year}-${String(idx + 1).padStart(2,'0')}`, c.age);
                     return `<div class="flex items-center justify-between gap-2 text-[10px] py-1 border-b border-neutral-900 last:border-0">
                         <span class="text-neutral-300 truncate">${escapeHtml(c.name || '-')}</span>
+                        <span class="text-neutral-500 font-bold shrink-0">RM${escapeHtml(amount)}</span>
                         <span class="px-2 py-0.5 rounded-lg border font-black shrink-0 ${statusBadgeClass(status)}">${status}</span>
                     </div>`;
                 }).join('');
@@ -5353,8 +5422,9 @@
                 const method = payRecord ? payRecord.payment_method : '-';
                 const payType = payRecord ? (payRecord.payment_type || 'monthly_ihsan') : '-';
 
-                const baseFee = calculateFee(child.age);
-                const ihsanFee = 5;
+                const info = getPaymentInfoSettings();
+                const baseFee = getMonthlyFeeForMonth(month, child.age);
+                const ihsanFee = info.ihsan_fee ?? 5;
                 const totalFee = baseFee + ihsanFee;
 
                 let methodLabel = 'Belum Dipilih';
@@ -5443,7 +5513,7 @@
             const pay = allPayments.find(p => p.child_id === childId && p.month === month);
             const isAuthorized = currentUser !== null;
             const isAdmin = currentUser && (currentUser.is_admin === true || currentUser.is_admin === 'true');
-            const baseFee = calculateFee(age);
+            const baseFee = getMonthlyFeeForMonth(month, age);
             const info = getPaymentInfoSettings();
             const ihsanFee = info.ihsan_fee ?? 5;
             const totalFee = baseFee + ihsanFee;
@@ -5580,16 +5650,12 @@
             const months   = getMonthRange(start, end);
             const info     = getPaymentInfoSettings();
             const payType  = document.getElementById('paymentType')?.value || 'monthly_ihsan';
-            const baseFee  = calculateFee(currentChildAge);
-            const ihsanFee = info.ihsan_fee ?? 5;
-            let perMonth   = baseFee + ihsanFee;
-            if (payType === 'monthly')  perMonth = baseFee;
-            else if (payType === 'ihsan')  perMonth = ihsanFee;
-            else if (payType === 'annual') perMonth = info.annual_fee;
-            const total = perMonth * months.length;
+            const total = months.reduce((sum, month) => sum + getPaymentAmountForType(month, currentChildAge, payType), 0);
+            const detail = months.map(month => `${formatMonthDisplay(month)} RM${getPaymentAmountForType(month, currentChildAge, payType)}`).join(' · ');
             sumEl.innerHTML = `
                 <span class="text-[9px] text-neutral-400 font-normal">${formatMonthDisplay(start)} &ndash; ${formatMonthDisplay(end)}</span><br>
-                <span class="text-[10px] font-bold text-neutral-300">${months.length} bulan &times; RM ${perMonth} = </span>
+                <span class="text-[9px] text-neutral-500">${detail}</span><br>
+                <span class="text-[10px] font-bold text-neutral-300">${months.length} bulan = </span>
                 <span class="text-sm font-black text-gold-400">RM ${total}</span>
             `;
         }
@@ -5710,6 +5776,7 @@
                     const res = await dataSdk.update(existing);
                     if (res.isOk) savedCount++;
                 } else {
+                    const amountDue = getPaymentAmountForType(month, currentChildAge, payType);
                     const payRecord = {
                         id:             `pay_${Date.now()}_${month.replace('-','')}`,
                         child_id:       currentPaymentEditId,
@@ -5717,6 +5784,9 @@
                         payment_method: method,
                         payment_type:   payType,
                         payment_status: status,
+                        jumlahBayaran:  amountDue,
+                        jumlahDibayar:  amountDue,
+                        amount:         amountDue,
                         notes,
                         receipt_image:  currentReceiptImage,
                         type:           'payment',
@@ -6258,7 +6328,10 @@
                     let children = []; try { children = JSON.parse(m.children || '[]'); } catch(e) {}
                     children.forEach(c => {
                         const exists = base.some(r => paymentMatchesChild(r.source, m, c) && r.bulanIndex === Number(selectedMonth) && String(r.tahun) === String(selectedYear));
-                        if (!exists) base.push({ source: {}, id: '', namaAhli: c.name, namaWaris: m.guardian_name, telefonWaris: m.guardian_phone, month: selectedYear + '-' + String(Number(selectedMonth)+1).padStart(2,'0'), bulanIndex: Number(selectedMonth), tahun: Number(selectedYear), jenisBayaran: 'Yuran Bulanan', jumlahBayaran: calculateFee(Number(c.age || 0)), jumlahDibayar: 0, tarikhBayaran: '', statusBayaran: 'Belum Bayar', resitUrl: '', catatanWaris: '', catatanAdmin: '', isSynthetic: true });
+                        if (!exists) {
+                            const monthStr = selectedYear + '-' + String(Number(selectedMonth)+1).padStart(2,'0');
+                            base.push({ source: {}, id: '', namaAhli: c.name, namaWaris: m.guardian_name, telefonWaris: m.guardian_phone, month: monthStr, bulanIndex: Number(selectedMonth), tahun: Number(selectedYear), jenisBayaran: 'Yuran Bulanan', jumlahBayaran: getMonthlyFeeForMonth(monthStr, Number(c.age || 0)), jumlahDibayar: 0, tarikhBayaran: '', statusBayaran: 'Belum Bayar', resitUrl: '', catatanWaris: '', catatanAdmin: '', isSynthetic: true });
+                        }
                     });
                 });
             }
@@ -7445,6 +7518,7 @@
             if (adminOrderInput) adminOrderInput.value = menuOrder.admin.map(k => MODULE_LABELS[k] || k).join('\n');
             if (warisOrderInput) warisOrderInput.value = menuOrder.waris.map(k => MODULE_LABELS[k] || k).join('\n');
             renderBeltOptionsSettings();
+            renderMonthlyFeePlanSettings();
 
             lucide.createIcons();
         }
@@ -7690,6 +7764,71 @@
             `;
             container.insertAdjacentHTML('beforeend', html);
             lucide.createIcons();
+        }
+
+        function getMonthlyFeePlanYears() {
+            const currentYear = new Date().getFullYear();
+            const years = new Set();
+            for (let year = currentYear - 1; year <= currentYear + 5; year++) years.add(year);
+            const setting = getMonthlyFeePlanSetting();
+            Object.keys(setting.plans || {}).forEach(y => years.add(Number(y)));
+            if (setting.year) years.add(Number(setting.year));
+            return [...years].filter(Number.isFinite).sort((a, b) => a - b);
+        }
+
+        function renderMonthlyFeePlanSettings() {
+            const select = document.getElementById('monthlyFeePlanYear');
+            const list = document.getElementById('monthlyFeePlanList');
+            if (!select || !list) return;
+            const years = getMonthlyFeePlanYears();
+            const selected = Number(select.value || new Date().getFullYear());
+            select.innerHTML = years.map(year => `<option value="${year}" ${year === selected ? 'selected' : ''}>${year}</option>`).join('');
+            if (!select.value) select.value = String(new Date().getFullYear());
+            const year = Number(select.value);
+            const plan = getMonthlyFeePlanForYear(year);
+            list.innerHTML = bulanNama.map((name, index) => {
+                const value = plan[String(index)] ?? '';
+                return `
+                    <label class="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2">
+                        <span class="text-[10px] font-bold text-neutral-300 flex-1">${name}</span>
+                        <span class="text-[10px] font-black text-neutral-500">RM</span>
+                        <input type="number" min="0" step="1" data-month-index="${index}" value="${escapeHtml(value)}"
+                            class="monthly-fee-input w-20 px-2 py-1.5 bg-black border border-neutral-800 rounded-lg text-xs text-neutral-100 text-right focus:outline-none focus:border-gold-500"
+                            placeholder="${calculateFee(7)}">
+                    </label>
+                `;
+            }).join('');
+        }
+
+        async function saveMonthlyFeePlanSettings() {
+            if (!isAdminUser()) return;
+            const year = Number(document.getElementById('monthlyFeePlanYear')?.value || new Date().getFullYear());
+            const months = {};
+            document.querySelectorAll('#monthlyFeePlanList .monthly-fee-input').forEach(input => {
+                const idx = input.getAttribute('data-month-index');
+                const raw = input.value;
+                if (raw !== '') {
+                    const amount = Number(raw);
+                    if (Number.isFinite(amount) && amount >= 0) months[idx] = amount;
+                }
+            });
+            const existing = allSettings.find(x => x.setting_key === 'monthly_fee_plan');
+            const plans = { ...(existing?.plans || {}) };
+            plans[String(year)] = months;
+            const payload = { type: 'settings', doc_type: 'settings', setting_key: 'monthly_fee_plan', year, months, plans, updatedAt: new Date().toISOString() };
+            const res = existing ? await dataSdk.update({ ...existing, ...payload }) : await dataSdk.create(payload);
+            if (res.isOk) {
+                if (existing) Object.assign(existing, payload);
+                else allSettings.push({ ...payload, __backendId: res.id || 'monthly_fee_plan' });
+                showToast('Pelan bayaran bulanan berjaya disimpan.', 'success');
+                await createAdminLog('Simpan Pelan Bayaran Bulanan', `Pelan yuran bulanan tahun ${year} dikemas kini. Kutipan Ihsan tidak termasuk dalam pelan ini.`, { year });
+                renderMonthlyFeePlanSettings();
+                renderPengurusanTab();
+                renderAdminRecords();
+                renderPayments();
+            } else {
+                showToast('Gagal simpan pelan bayaran.', 'error');
+            }
         }
 
         async function saveSettingsTab() {
